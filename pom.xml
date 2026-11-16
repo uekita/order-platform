@@ -32,7 +32,7 @@
         <hikari.version>6.3.0</hikari.version>
         <postgresql.version>42.7.7</postgresql.version>
         <kafka-clients.version>3.9.1</kafka-clients.version>
-        <slf4j.version>2.0.17</slf4j.version>
+        <slf4j.version>2.0.20</slf4j.version>
         <logback.version>1.5.18</logback.version>
 
         <!-- Reporting -->
