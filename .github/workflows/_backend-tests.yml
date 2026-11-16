@@ -1,0 +1,206 @@
+name: Backend Test Runner (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment that scopes vars/secrets (local, dev, staging)
+        required: true
+        type: string
+      tag_expression:
+        description: JUnit 5 tag expression (empty means all non-excluded tags)
+        required: false
+        default: ""
+        type: string
+      excluded_groups:
+        description: Tags to exclude (localonly by default)
+        required: false
+        default: localonly
+        type: string
+      threads:
+        description: Parallel worker count (1-16)
+        required: false
+        default: "4"
+        type: string
+      parallel:
+        description: Enable JUnit 5 parallel execution
+        required: false
+        default: true
+        type: boolean
+      start_local_stack:
+        description: Build and start the local Docker Compose stack
+        required: false
+        default: false
+        type: boolean
+      ref:
+        description: Optional git ref to test
+        required: false
+        default: ""
+        type: string
+      notify_slack:
+        description: Send a Slack message when the job fails
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      API_TOKEN:
+        required: false
+      DB_PASSWORD:
+        required: false
+      KAFKA_SASL_USERNAME:
+        required: false
+      KAFKA_SASL_PASSWORD:
+        required: false
+      SLACK_WEBHOOK:
+        required: false
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  backend-tests:
+    name: Backend tests / ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 1
+
+      - name: Set up JDK 21 and Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: |
+            pom.xml
+            qa/backend-test-automation/pom.xml
+            services/order-service/pom.xml
+
+      - name: Start local stack
+        if: inputs.start_local_stack
+        run: docker compose up -d --build --wait
+
+      - name: Wait for local health
+        if: inputs.start_local_stack
+        env:
+          HEALTH_URL: http://localhost:8080/actuator/health
+        run: ./scripts/wait-for-health.sh
+
+      - name: Validate deployed environment configuration
+        if: ${{ !inputs.start_local_stack }}
+        env:
+          API_BASE_URI: ${{ vars.API_BASE_URI }}
+          DB_URL: ${{ vars.DB_URL }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_BASE_URI:-}" ]; then
+            echo "::error::vars.API_BASE_URI is not set for environment '${{ inputs.environment }}'"
+            exit 1
+          fi
+          if [ -z "${DB_URL:-}" ] || [ -z "${DB_USERNAME:-}" ]; then
+            echo "::warning::DB_URL/DB_USERNAME are not set; database-backed tests will fail"
+          fi
+
+      - name: Wait for deployed environment health
+        if: ${{ !inputs.start_local_stack && vars.HEALTH_URL != '' }}
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL }}
+          HEALTH_AUTHORIZATION: ${{ secrets.API_TOKEN != '' && format('Bearer {0}', secrets.API_TOKEN) || '' }}
+        run: ./scripts/wait-for-health.sh
+
+      - name: Run backend tests (local)
+        if: inputs.start_local_stack
+        env:
+          TEST_ENV: local
+          TAG_EXPRESSION: ${{ inputs.tag_expression }}
+          EXCLUDED_GROUPS: ${{ inputs.excluded_groups }}
+          THREADS: ${{ inputs.threads }}
+          PARALLEL: ${{ inputs.parallel }}
+        run: ./scripts/run-backend-tests.sh
+
+      - name: Run backend tests (deployed)
+        if: ${{ !inputs.start_local_stack }}
+        env:
+          TEST_ENV: ${{ inputs.environment }}
+          TAG_EXPRESSION: ${{ inputs.tag_expression }}
+          EXCLUDED_GROUPS: ${{ inputs.excluded_groups }}
+          THREADS: ${{ inputs.threads }}
+          PARALLEL: ${{ inputs.parallel }}
+          API_BASE_URI: ${{ vars.API_BASE_URI }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          API_TLS_INSECURE: ${{ vars.API_TLS_INSECURE }}
+          DB_URL: ${{ vars.DB_URL }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          KAFKA_BOOTSTRAP_SERVERS: ${{ vars.KAFKA_BOOTSTRAP_SERVERS }}
+          KAFKA_SECURITY_PROTOCOL: ${{ vars.KAFKA_SECURITY_PROTOCOL }}
+          KAFKA_SASL_MECHANISM: ${{ vars.KAFKA_SASL_MECHANISM }}
+          KAFKA_SASL_USERNAME: ${{ secrets.KAFKA_SASL_USERNAME }}
+          KAFKA_SASL_PASSWORD: ${{ secrets.KAFKA_SASL_PASSWORD }}
+        run: ./scripts/run-backend-tests.sh
+
+      - name: Capture local stack logs
+        if: always() && inputs.start_local_stack
+        run: |
+          {
+            echo "### docker compose ps"
+            docker compose ps 2>&1 || true
+            echo ""
+            echo "### docker compose logs"
+            docker compose logs --no-color 2>&1 || true
+          } > local-stack.log
+
+      - name: Generate Allure report
+        if: always()
+        run: mvn -B -f qa/backend-test-automation/pom.xml allure:report -Dstyle.color=never || true
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            qa/backend-test-automation/target/allure-results
+            qa/backend-test-automation/target/surefire-reports
+            qa/backend-test-automation/target/backend-tests.log
+            qa/backend-test-automation/target/site/allure-maven-plugin
+            local-stack.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish JUnit results as a check
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: qa/backend-test-automation/target/surefire-reports/*.xml
+          check_name: Backend tests (${{ inputs.environment }})
+          comment_mode: "off"
+          fail_on: nothing
+
+      - name: Tear down local stack
+        if: always() && inputs.start_local_stack
+        run: docker compose down -v --remove-orphans || true
+
+      - name: Notify Slack on failure
+        if: failure() && inputs.notify_slack
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${SLACK_WEBHOOK:-}" ]; then
+            echo "::warning::SLACK_WEBHOOK is not configured; skipping notification"
+            exit 0
+          fi
+          payload=$(jq -n \
+            --arg text "Backend tests failed in ${TEST_ENV:-${{ inputs.environment }}}. Run: ${RUN_URL}" \
+            '{text: $text}')
+          curl -fsS -X POST -H "Content-Type: application/json" --data "$payload" "$SLACK_WEBHOOK" || true

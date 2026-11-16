@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "OrderCreatedEvent",
+  "type": "object",
+  "required": ["eventId", "eventType", "eventVersion", "occurredAt", "correlationId", "data"],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": { "type": "string", "enum": ["order.created.v1"] },
+    "eventVersion": { "type": "integer", "minimum": 1 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "correlationId": { "type": "string", "minLength": 1 },
+    "data": {
+      "type": "object",
+      "required": ["orderId", "customerId", "amount", "currency", "status"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "customerId": { "type": "string", "format": "uuid" },
+        "amount": { "type": "number", "minimum": 0, "exclusiveMinimum": true },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "status": { "type": "string", "enum": ["CREATED"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

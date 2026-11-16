@@ -1,0 +1,7 @@
+target/
+**/target/
+.git/
+.idea/
+.env
+*.log
+qa/backend-test-automation/

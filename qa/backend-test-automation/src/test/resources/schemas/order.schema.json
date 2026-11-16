@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "Order",
+  "type": "object",
+  "required": ["id", "customerId", "amount", "currency", "status", "correlationId", "createdAt", "updatedAt"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "customerId": { "type": "string", "format": "uuid" },
+    "amount": { "type": "number", "minimum": 0, "exclusiveMinimum": true },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "status": { "type": "string", "enum": ["CREATED"] },
+    "correlationId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

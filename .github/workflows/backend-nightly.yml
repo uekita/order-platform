@@ -1,0 +1,42 @@
+name: Backend Nightly
+
+on:
+  schedule:
+    # 02:00 UTC every day
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: backend-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  staging-full:
+    name: Staging full regression
+    uses: ./.github/workflows/_backend-tests.yml
+    with:
+      environment: staging
+      tag_expression: "smoke | regression | e2e"
+      excluded_groups: localonly
+      threads: "6"
+      parallel: true
+      start_local_stack: false
+      notify_slack: true
+    secrets: inherit
+
+  local-event-driven:
+    name: Local event-driven resilience
+    uses: ./.github/workflows/_backend-tests.yml
+    with:
+      environment: local
+      tag_expression: "localonly"
+      excluded_groups: "__none__"
+      threads: "4"
+      parallel: true
+      start_local_stack: true
+      notify_slack: false

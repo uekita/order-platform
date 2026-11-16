@@ -1,0 +1,43 @@
+name: Backend Regression - Staging (post-merge)
+
+# Runs automatically after changes merge to main. If the application is deployed
+# by a separate workflow, replace this trigger with workflow_run:
+#
+# on:
+#   workflow_run:
+#     workflows: ["Deploy Order Service to Staging"]
+#     types: [completed]
+#
+# and gate the job with: if: github.event.workflow_run.conclusion == 'success'
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/order-service/**"
+      - "qa/backend-test-automation/**"
+      - ".github/workflows/_backend-tests.yml"
+      - ".github/workflows/backend-regression.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: backend-regression-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  staging-regression:
+    name: Staging regression
+    uses: ./.github/workflows/_backend-tests.yml
+    with:
+      environment: staging
+      tag_expression: "smoke | regression | e2e"
+      excluded_groups: localonly
+      threads: "6"
+      parallel: true
+      start_local_stack: false
+      notify_slack: true
+    secrets: inherit

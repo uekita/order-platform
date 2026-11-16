@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "ApiError",
+  "type": "object",
+  "required": ["code", "message", "timestamp", "correlationId"],
+  "properties": {
+    "code": { "type": "string", "minLength": 1 },
+    "message": { "type": "string", "minLength": 1 },
+    "details": { "type": "object" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "correlationId": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "DlqEnvelope",
+  "type": "object",
+  "required": [
+    "originalTopic",
+    "originalKey",
+    "originalPayload",
+    "errorType",
+    "errorMessage",
+    "failedAt",
+    "correlationId"
+  ],
+  "properties": {
+    "originalTopic": { "type": "string", "minLength": 1 },
+    "originalKey": { "type": ["string", "null"] },
+    "originalPayload": { "type": "string" },
+    "errorType": { "type": "string", "minLength": 1 },
+    "errorMessage": { "type": ["string", "null"] },
+    "failedAt": { "type": "string", "format": "date-time" },
+    "correlationId": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

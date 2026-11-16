@@ -1,0 +1,11 @@
+target/
+**/target/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+.env
+*.log
+allure-results/
+local-stack.log
+qa/backend-test-automation/.allure/

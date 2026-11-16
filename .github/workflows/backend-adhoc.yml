@@ -1,0 +1,132 @@
+name: Backend Ad-hoc Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (local starts the Docker Compose stack)
+        required: true
+        default: staging
+        type: choice
+        options:
+          - local
+          - dev
+          - staging
+      tag_preset:
+        description: Tag preset to execute
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - regression
+          - e2e
+          - smoke+regression
+          - all
+          - localonly
+          - custom
+      tag_expression:
+        description: Custom JUnit 5 tag expression (used only with tag_preset=custom)
+        required: false
+        default: ""
+        type: string
+      threads:
+        description: Parallel worker count (1-16)
+        required: false
+        default: "4"
+        type: string
+      parallel:
+        description: Enable JUnit 5 parallel execution
+        required: true
+        default: true
+        type: boolean
+      ref:
+        description: Optional branch, tag or SHA to test (empty = selected ref)
+        required: false
+        default: ""
+        type: string
+      notify_slack:
+        description: Send a Slack notification on failure
+        required: false
+        default: false
+        type: boolean
+
+run-name: Backend ad-hoc / ${{ inputs.environment }} / ${{ inputs.tag_preset }}
+
+concurrency:
+  group: backend-adhoc-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  resolve:
+    name: Resolve tag selection
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.resolve.outputs.tags }}
+      excluded_groups: ${{ steps.resolve.outputs.excluded_groups }}
+    steps:
+      - name: Resolve tag expression
+        id: resolve
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          PRESET: ${{ inputs.tag_preset }}
+          CUSTOM: ${{ inputs.tag_expression }}
+        run: |
+          set -euo pipefail
+          case "$PRESET" in
+            smoke) TAGS="smoke" ;;
+            regression) TAGS="regression" ;;
+            e2e) TAGS="e2e" ;;
+            smoke+regression) TAGS="smoke | regression" ;;
+            all) TAGS="" ;;
+            localonly) TAGS="localonly" ;;
+            custom)
+              if [ -z "$CUSTOM" ]; then
+                echo "::error::tag_expression is required when tag_preset=custom"
+                exit 1
+              fi
+              TAGS="$CUSTOM"
+              ;;
+            *)
+              echo "::error::Unknown tag preset: $PRESET"
+              exit 1
+              ;;
+          esac
+
+          if [ "$PRESET" = "localonly" ] && [ "$ENVIRONMENT" != "local" ]; then
+            echo "::error::The localonly preset requires environment=local"
+            exit 1
+          fi
+
+          # localonly is excluded by default. Presets that explicitly include it
+          # (all, localonly, custom) use a sentinel that the runner maps to an
+          # empty exclusion list; an empty string would be indistinguishable from
+          # an omitted workflow input.
+          if [ "$PRESET" = "all" ] || [ "$PRESET" = "localonly" ] || [ "$PRESET" = "custom" ]; then
+            EXCLUDED="__none__"
+          else
+            EXCLUDED="localonly"
+          fi
+
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "excluded_groups=$EXCLUDED" >> "$GITHUB_OUTPUT"
+
+  backend-tests:
+    name: Backend ad-hoc tests
+    needs: resolve
+    uses: ./.github/workflows/_backend-tests.yml
+    with:
+      environment: ${{ inputs.environment }}
+      tag_expression: ${{ needs.resolve.outputs.tags }}
+      excluded_groups: ${{ needs.resolve.outputs.excluded_groups }}
+      threads: ${{ inputs.threads }}
+      parallel: ${{ inputs.parallel }}
+      start_local_stack: ${{ inputs.environment == 'local' }}
+      ref: ${{ inputs.ref }}
+      notify_slack: ${{ inputs.notify_slack }}
+    secrets: inherit
