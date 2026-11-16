@@ -25,7 +25,7 @@
 
         <!-- Test framework versions -->
         <junit.version>5.14.4</junit.version>
-        <rest-assured.version>5.5.7</rest-assured.version>
+        <rest-assured.version>6.3.0</rest-assured.version>
         <awaitility.version>4.3.0</awaitility.version>
         <assertj.version>3.27.7</assertj.version>
         <jackson.version>2.19.2</jackson.version>
